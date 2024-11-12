@@ -1,64 +1,70 @@
-version: '2.1'
-
-volumes:
-  db-data:
-  vendor:
-  var:
-
 services:
   mysql:
-    image: mysql:5
-    platform: linux/amd64
-    ports:
-      - "3306"
-    volumes:
-      - db-data:/var/lib/mysql
-    environment:
-      MYSQL_ROOT_PASSWORD: prestashop
-      MYSQL_DATABASE: prestashop
+    container_name: kabowd-mysql
+    image: mysql:5.7
     restart: always
-  keycloak:
-    image: quay.io/keycloak/keycloak:19.0.3
+    platform: linux/amd64
     environment:
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
-    command:
-      - start-dev
-    ports:
-      - "8003:8080"
-  prestashop-git:
+      MYSQL_ROOT_PASSWORD: admin
+      MYSQL_DATABASE: prestashop
+    networks:
+      - prestashop_network
+    volumes:
+      - dbdata:/var/lib/mysql
+
+  prestashop:
     hostname: ${PS_HOSTNAME:-localhost}
     build:
       dockerfile: .docker/Dockerfile
       context: .
       args:
-        - VERSION=${VERSION:-8.1-apache}
+        - VERSION=latest
         - USER_ID=${USER_ID:-1000}
         - GROUP_ID=${GROUP_ID:-1000}
         - NODE_VERSION=${NODE_VERSION:-14.21.3}
-    environment:
-      DISABLE_MAKE: ${DISABLE_MAKE:-0}
-      PS_INSTALL_AUTO: ${PS_INSTALL_AUTO:-1}
-      DB_PASSWD: ${DB_PASSWD:-prestashop}
-      DB_NAME: ${DB_NAME:-prestashop}
-      DB_SERVER: ${DB_SERVER:-mysql}
-      DB_PREFIX: ${DB_PREFIX:-ps_}
-      PS_DOMAIN: ${PS_DOMAIN:-localhost:8001}
-      PS_FOLDER_INSTALL: ${PS_FOLDER_INSTALL:-install-dev}
-      PS_FOLDER_ADMIN: ${PS_FOLDER_ADMIN:-admin-dev}
-      PS_COUNTRY: ${PS_COUNTRY:-fr}
-      PS_LANGUAGE: ${PS_LANGUAGE:-fr}
-      PS_DEV_MODE: ${PS_DEV_MODE:-1}
-      PS_ENABLE_SSL: ${PS_ENABLE_SSL:-0}
-      PS_ERASE_DB: ${PS_ERASE_DB:-0}
-      ADMIN_MAIL: ${ADMIN_MAIL:-demo@prestashop.com}
-      ADMIN_PASSWD: ${ADMIN_PASSWD:-Correct Horse Battery Staple}
-    command: ["/tmp/wait-for-it.sh", "--timeout=60", "--strict", "mysql:3306", "--", "/tmp/docker_run_git.sh"]
-    ports:
-      - "8001:80"
-      - "8002:443"
     depends_on:
       - mysql
-      - keycloak
+    ports:
+      - 8080:80
+    environment:
+      DB_SERVER: kabowd-mysql
+      DB_NAME: prestashop
+      DB_USER: root
+      DB_PASSWD: admin
+      PS_INSTALL_AUTO: 1
+      PS_DOMAIN: localhost:8080
+      PS_FOLDER_ADMIN: adminkabowd
+    networks:
+      - prestashop_network
     volumes:
-      - ./:/var/www/html:delegated
+      - type: bind
+        source: ./modules/ # local path to the modules
+        target: /var/www/html/modules/ # path to be mounted in the container
+      - type: bind
+        source: ./themes/ # local path to the theme
+        target: /var/www/html/themes/ # path to be mounted in the container
+      #- psdata:/var/www/html
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: phpmyadmin
+    links:
+      - mysql
+    environment:
+      PMA_HOST: kabowd-mysql
+      PMA_PORT: 3306
+      PMA_ARBITRARY: 1
+    networks:
+      - prestashop_network
+    restart: unless-stopped
+    ports:
+      - 8081:80
+
+networks:
+  prestashop_network:
+
+volumes:
+  psdata:
+  dbdata:
+  vendor:
+  var:
